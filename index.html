@@ -2,21 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Flappy CID Bird</title>
+<title>Flappy CID Bird Cinematic Loop</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body {
+  html, body {
     margin: 0;
+    padding: 0;
     background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
   }
   canvas {
-    border: 2px solid #000;
+    display: block;
+    margin: auto;
     background: #000;
-    touch-action: manipulation;
+    border: 2px solid #000;
   }
   .flash {
     animation: flash 0.2s;
@@ -29,11 +30,19 @@
 </head>
 <body>
 
-<canvas id="game" width="360" height="520"></canvas>
+<canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
+// ===== MOBILE RESIZE =====
+function resizeCanvas() {
+  canvas.width = Math.min(window.innerWidth, 360);
+  canvas.height = Math.min(window.innerHeight, 520);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 // ===== IMAGES =====
 const bgImg = new Image();
@@ -46,19 +55,10 @@ birdImg.src = "bird.png";
 const startSound = new Audio("start.wav");
 const gameOverSound = new Audio("gameover.wav");
 
-// MID sounds array
-const midSequence = [
-  new Audio("mid1.wav"),
-  new Audio("mid2.wav"),
-  new Audio("mid3.wav"),
-  new Audio("mid4.wav"),
-  new Audio("mid5.wav"),
-  new Audio("mid6.wav"),
-  new Audio("mid7.wav")
-];
-
-let currentMidIndex = 0;
-let midTimeout = null;
+// ===== MID SOUND LOOP =====
+const midSound = new Audio("mid1.wav"); // একটাই sound
+midSound.loop = true; // loop property
+let midPlaying = false;
 
 // ===== BIRD =====
 const bird = {
@@ -66,9 +66,10 @@ const bird = {
   y: 230,
   w: 42,
   h: 32,
-  gravity: 0.28,
+  gravity: 0.25,
   lift: -7.5,
-  velocity: 0
+  velocity: 0,
+  angle: 0
 };
 
 // ===== GAME STATE =====
@@ -78,28 +79,8 @@ let score = 0;
 let bestScore = localStorage.getItem("bestScore") || 0;
 let gameOver = true;
 let gameStarted = false;
-
-// ===== SOUND CONTROL =====
-function stopAllMidSounds() {
-  midSequence.forEach(s => {
-    s.pause();
-    s.currentTime = 0;
-  });
-  currentMidIndex = 0;
-  if (midTimeout) clearTimeout(midTimeout);
-}
-
-function playMidSequence() {
-  if (gameOver || currentMidIndex >= midSequence.length) return;
-
-  const sound = midSequence[currentMidIndex];
-  sound.currentTime = 0;
-  sound.play();
-  sound.onended = () => {
-    currentMidIndex++;
-    playMidSequence(); // next in queue
-  };
-}
+let hitSlowMotion = false;
+let shakeOffset = 0;
 
 // ===== START GAME =====
 function startGame() {
@@ -108,20 +89,35 @@ function startGame() {
   frame = 0;
   bird.y = 230;
   bird.velocity = 0;
+  bird.angle = 0;
   gameOver = false;
   gameStarted = true;
+  hitSlowMotion = false;
+  shakeOffset = 0;
 
-  stopAllMidSounds();
   gameOverSound.pause();
   gameOverSound.currentTime = 0;
 
   startSound.currentTime = 0;
   startSound.play();
 
-  // ⏱ Start mid sequence 2.5 sec after game start
-  midTimeout = setTimeout(() => {
-    playMidSequence();
+  // mid sound loop 2.5 sec delay
+  setTimeout(()=>{
+    if(!gameOver){ // শুধুমাত্র game চলছে
+      midSound.currentTime = 0;
+      midSound.play();
+      midPlaying = true;
+    }
   }, 2500);
+}
+
+// ===== STOP MID SOUND =====
+function stopMidSound() {
+  if(midPlaying){
+    midSound.pause();
+    midSound.currentTime = 0;
+    midPlaying = false;
+  }
 }
 
 // ===== CONTROLS =====
@@ -132,59 +128,15 @@ function flap() {
   }
   bird.velocity = bird.lift;
 }
-
 document.addEventListener("keydown", flap);
 canvas.addEventListener("click", flap);
 canvas.addEventListener("touchstart", flap);
 
 // ===== PIPE =====
 function addPipe() {
-  const gap = 220;
+  const gap = 250;
   const top = Math.random() * 140 + 80;
-  pipes.push({
-    x: canvas.width,
-    top,
-    bottom: top + gap,
-    width: 50,
-    passed: false
-  });
-}
-
-// ===== DRAW =====
-function drawBackground() {
-  if (bgImg.complete) {
-    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.fillStyle = "#111";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-}
-
-function drawBird() {
-  if (birdImg.complete) {
-    ctx.drawImage(birdImg, bird.x, bird.y, bird.w, bird.h);
-  }
-}
-
-function drawPipes() {
-  ctx.fillStyle = "#0f0";
-  pipes.forEach(p => {
-    ctx.fillRect(p.x, 0, p.width, p.top);
-    ctx.fillRect(p.x, p.bottom, p.width, canvas.height);
-  });
-}
-
-function drawScore() {
-  ctx.fillStyle = "#fff";
-  ctx.font = "20px Arial";
-  ctx.fillText("Score: " + score, 10, 25);
-  ctx.fillText("Best: " + bestScore, 10, 50);
-}
-
-function drawStartText() {
-  ctx.fillStyle = "#fff";
-  ctx.font = "24px Arial";
-  ctx.fillText("Tap to Start", 115, 260);
+  pipes.push({ x: canvas.width, top, bottom: top + gap, width: 50, passed: false });
 }
 
 // ===== GAME OVER =====
@@ -192,71 +144,119 @@ function triggerGameOver() {
   if (gameOver) return;
   gameOver = true;
 
-  stopAllMidSounds();
+  stopMidSound(); // mid sound বন্ধ হবে
   gameOverSound.currentTime = 0;
   gameOverSound.play();
 
-  canvas.classList.add("flash");
-  setTimeout(() => canvas.classList.remove("flash"), 200);
+  hitSlowMotion = true;
+  shakeOffset = 4;
 
-  if (score > bestScore) {
-    bestScore = score;
-    localStorage.setItem("bestScore", bestScore);
-  }
+  if(score>bestScore){ bestScore=score; localStorage.setItem("bestScore",bestScore);}
+}
+
+// ===== DRAW =====
+function drawBackground() {
+  if(bgImg.complete) ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+  else { ctx.fillStyle="#111"; ctx.fillRect(0,0,canvas.width,canvas.height);}
+}
+
+function drawBird() {
+  ctx.save();
+  ctx.translate(bird.x + bird.w/2, bird.y + bird.h/2);
+  ctx.rotate(bird.angle);
+  ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h);
+  ctx.restore();
+}
+
+function drawPipes() {
+  ctx.fillStyle = "#0f0";
+  pipes.forEach(p=>{
+    ctx.fillRect(p.x,0,p.width,p.top);
+    ctx.fillRect(p.x,p.bottom,p.width,canvas.height);
+  });
+}
+
+function drawScore() {
+  ctx.fillStyle = "#fff";
+  ctx.font = "20px Arial";
+  ctx.textAlign="left";
+  ctx.fillText("Score: "+score,10,25);
+  ctx.fillText("Best: "+bestScore,10,50);
+}
+
+function drawStartText() {
+  ctx.fillStyle="#fff";
+  ctx.font="24px Arial";
+  ctx.textAlign="left";
+  ctx.fillText("Tap to Start",115,260);
 }
 
 // ===== LOOP =====
 function update() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // shake effect
+  ctx.save();
+  if(hitSlowMotion){
+    const shakeX = (Math.random()-0.5)*shakeOffset;
+    const shakeY = (Math.random()-0.5)*shakeOffset;
+    ctx.translate(shakeX, shakeY);
+  }
+
   drawBackground();
 
-  if (!gameStarted) {
+  if(!gameStarted){
     drawStartText();
     drawBird();
+    ctx.restore();
     requestAnimationFrame(update);
     return;
   }
 
-  if (!gameOver) {
+  if(!gameOver){
     bird.velocity += bird.gravity;
     bird.y += bird.velocity;
 
-    if (frame % 150 === 0) addPipe();
+    if(bird.velocity<0) bird.angle = -0.3;
+    else bird.angle = Math.min(bird.velocity*0.03,0.5);
 
-    pipes.forEach(p => {
-      p.x -= 1.1;
+    if(frame%150===0) addPipe();
 
-      if (!p.passed && p.x + p.width < bird.x) {
-        score++;
-        p.passed = true;
-      }
-
-      if (
-        bird.x < p.x + p.width &&
-        bird.x + bird.w > p.x &&
-        (bird.y < p.top || bird.y + bird.h > p.bottom)
-      ) {
+    pipes.forEach(p=>{
+      p.x -= 1.0;
+      if(!p.passed && p.x+p.width<bird.x){ score++; p.passed=true; }
+      if(bird.x < p.x+p.width && bird.x+bird.w>p.x && (bird.y< p.top || bird.y+bird.h>p.bottom)){
         triggerGameOver();
       }
     });
 
-    pipes = pipes.filter(p => p.x + p.width > 0);
-
-    if (bird.y < 0 || bird.y + bird.h > canvas.height) {
-      triggerGameOver();
-    }
+    pipes = pipes.filter(p=>p.x+p.width>0);
+    if(bird.y<0 || bird.y+bird.h>canvas.height) triggerGameOver();
   } else {
-    ctx.fillStyle = "red";
-    ctx.font = "30px Arial";
-    ctx.fillText("Game Over", 95, 240);
-    ctx.font = "16px Arial";
-    ctx.fillText("Tap to Restart", 115, 270);
+    if(hitSlowMotion){
+      bird.y += bird.velocity*0.3;
+      bird.velocity += bird.gravity*0.3;
+    }
+
+    // background for game over
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(50, 200, canvas.width-100, 100);
+
+    ctx.fillStyle="red";
+    ctx.font="30px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Game Over", canvas.width/2, 240);
+
+    ctx.fillStyle="#fff";
+    ctx.font="16px Arial";
+    ctx.fillText("Tap to Restart", canvas.width/2, 270);
   }
 
   drawBird();
   drawPipes();
   drawScore();
 
+  ctx.restore();
   frame++;
   requestAnimationFrame(update);
 }
